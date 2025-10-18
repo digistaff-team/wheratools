@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WheraTools - Учёт электроинструментов</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            color: #667eea;
+            font-size: 2em;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .tools-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+
+        .tool-card {
+            background: white;
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .tool-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+        }
+
+        .tool-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .tool-name {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .status-available {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-assigned {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .status-repair {
+            background: #ef4444;
+            color: white;
+        }
+
+        .tool-info {
+            margin: 15px 0;
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .tool-info strong {
+            color: #333;
+        }
+
+        .repair-info {
+            background: #fee2e2;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 15px 0;
+            border-left: 4px solid #ef4444;
+        }
+
+        .repair-info p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+            transform: scale(1.02);
+        }
+
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+            transform: scale(1.02);
+        }
+
+        .btn-warning {
+            background: #f59e0b;
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+            transform: scale(1.02);
+        }
+
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+            transform: scale(1.02);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .form-group select,
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e5e7eb;
+            border-radius: 10px;
+            font-size: 1em;
+            font-family: inherit;
+        }
+
+        .form-group select:focus,
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.5em;
+            padding: 50px;
+        }
+
+        @media (max-width: 768px) {
+            .tools-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔧 WheraTools</h1>
+            <p>Система учёта электроинструментов</p>
+        </header>
+
+        <div class="stats">
+            <div class="stat-card">
+                <h3 id="availableCount">0</h3>
+                <p>Доступно</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="assignedCount">0</h3>
+                <p>В работе</p>
+            </div>
+            <div class="stat-card">
+                <h3 id="repairCount">0</h3>
+                <p>В ремонте</p>
+            </div>
+        </div>
+
+        <div id="toolsContainer" class="tools-grid">
+            <div class="loading">Загрузка данных...</div>
+        </div>
+    </div>
+
+    <!-- Modal для выдачи инструмента -->
+    <div id="assignModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Выдать инструмент</div>
+            <div class="form-group">
+                <label>Выберите работника:</label>
+                <select id="memberSelect"></select>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-primary" onclick="confirmAssign()">Подтвердить</button>
+                <button class="btn" style="background: #6b7280; color: white;" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для возврата инструмента -->
+    <div id="returnModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Возврат инструмента</div>
+            <div class="form-group">
+                <label>ФИО принимающего:</label>
+                <input type="text" id="checkedBy" placeholder="Введите ФИО" required>
+            </div>
+            <div class="form-group">
+                <label>Работоспособность:</label>
+                <select id="isWorking" onchange="toggleIssueField()">
+                    <option value="true">✅ Исправен</option>
+                    <option value="false">❌ Неисправен</option>
+                </select>
+            </div>
+            <div class="form-group" id="issueBlock" style="display: none;">
+                <label>Описание неисправности:</label>
+                <textarea id="issueDescription" rows="3" placeholder="Опишите проблему"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Примечания:</label>
+                <textarea id="conditionNotes" rows="2" placeholder="Дополнительные комментарии"></textarea>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-success" onclick="confirmReturn()">Подтвердить возврат</button>
+                <button class="btn" style="background: #6b7280; color: white;" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для начала ремонта -->
+    <div id="startRepairModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Начать ремонт</div>
+            <div class="form-group">
+                <label>ФИО мастера:</label>
+                <input type="text" id="repairedBy" placeholder="Введите ФИО мастера" required>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-warning" onclick="confirmStartRepair()">Начать ремонт</button>
+                <button class="btn" style="background: #6b7280; color: white;" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal для завершения ремонта -->
+    <div id="completeRepairModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Завершение ремонта</div>
+            <div class="form-group">
+                <label>Результат ремонта:</label>
+                <select id="isFixed">
+                    <option value="true">✅ Исправлен</option>
+                    <option value="false">❌ Не удалось исправить</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Примечания о ремонте:</label>
+                <textarea id="repairNotes" rows="4" placeholder="Опишите выполненные работы" required></textarea>
+            </div>
+            <div class="form-actions">
+                <button class="btn btn-success" onclick="confirmCompleteRepair()">Завершить</button>
+                <button class="btn" style="background: #6b7280; color: white;" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+        let currentToolId = null;
+        let currentRepairId = null;
+        let members = [];
+
+        // Загрузка данных при старте
+        async function init() {
+            await loadMembers();
+            await loadTools();
+            setInterval(loadTools, 10000); // Обновление каждые 10 секунд
+        }
+
+        // Загрузка списка работников
+        async function loadMembers() {
+            try {
+                const response = await fetch(`${API_URL}/members`);
+                members = await response.json();
+                
+                const select = document.getElementById('memberSelect');
+                select.innerHTML = members.map(m => 
+                    `<option value="${m.id}">${m.name}</option>`
+                ).join('');
+            } catch (error) {
+                console.error('Ошибка загрузки работников:', error);
+            }
+        }
+
+        // Загрузка статуса инструментов
+        async function loadTools() {
+            try {
+                const response = await fetch(`${API_URL}/tools/status`);
+                const tools = await response.json();
+                
+                // Обновление статистики
+                const available = tools.filter(t => t.status === 'available').length;
+                const assigned = tools.filter(t => t.status === 'assigned').length;
+                const repair = tools.filter(t => t.status === 'in_repair').length;
+                
+                document.getElementById('availableCount').textContent = available;
+                document.getElementById('assignedCount').textContent = assigned;
+                document.getElementById('repairCount').textContent = repair;
+                
+                // Отображение карточек инструментов
+                const container = document.getElementById('toolsContainer');
+                container.innerHTML = tools.map(tool => renderToolCard(tool)).join('');
+            } catch (error) {
+                console.error('Ошибка загрузки инструментов:', error);
+                document.getElementById('toolsContainer').innerHTML = 
+                    '<div class="loading" style="color: #ef4444;">Ошибка загрузки данных</div>';
+            }
+        }
+
+        // Отображение карточки инструмента
+        function renderToolCard(tool) {
+            let statusBadge = '';
+            let statusClass = '';
+            let actionButton = '';
+            let info = '';
+
+            if (tool.status === 'available') {
+                statusBadge = '<span class="status-badge status-available">В инвентаре</span>';
+                statusClass = 'status-available';
+                actionButton = `<button class="btn btn-primary" onclick="openAssignModal(${tool.tool_id})">Выдать инструмент</button>`;
+            } else if (tool.status === 'assigned') {
+                statusBadge = '<span class="status-badge status-assigned">Выдан</span>';
+                statusClass = 'status-assigned';
+                info = `<div class="tool-info"><strong>У работника:</strong> ${tool.current_holder}</div>`;
+                actionButton = `<button class="btn btn-success" onclick="openReturnModal(${tool.tool_id})">Вернуть инструмент</button>`;
+            } else if (tool.status === 'in_repair') {
+                statusBadge = '<span class="status-badge status-repair">В ремонте</span>';
+                statusClass = 'status-repair';
+                
+                if (tool.repair_info) {
+                    info = `
+                        <div class="repair-info">
+                            <p><strong>Проблема:</strong> ${tool.repair_info.issue}</p>
+                            <p><strong>Остался у:</strong> ${tool.repair_info.held_by}</p>
+                            <p><strong>Выявил:</strong> ${tool.repair_info.reported_by}</p>
+                            <p><strong>Статус:</strong> ${tool.repair_info.repair_status === 'pending' ? 'Ожидает ремонта' : 'В процессе'}</p>
+                        </div>
+                    `;
+                    
+                    if (tool.repair_info.repair_status === 'pending') {
+                        actionButton = `<button class="btn btn-warning" onclick="openStartRepairModal(${tool.repair_info.repair_id})">Начать ремонт</button>`;
+                    } else if (tool.repair_info.repair_status === 'in_progress') {
+                        actionButton = `<button class="btn btn-danger" onclick="openCompleteRepairModal(${tool.repair_info.repair_id})">Завершить ремонт</button>`;
+                    }
+                }
+            }
+
+            return `
+                <div class="tool-card">
+                    <div class="tool-header">
+                        <div class="tool-name">${tool.tool_name}</div>
+                        ${statusBadge}
+                    </div>
+                    ${info}
+                    ${actionButton}
+                </div>
+            `;
+        }
+
+        // Модальные окна
+        function openAssignModal(toolId) {
+            currentToolId = toolId;
+            document.getElementById('assignModal').classList.add('active');
+        }
+
+        function openReturnModal(toolId) {
+            currentToolId = toolId;
+            document.getElementById('returnModal').classList.add('active');
+        }
+
+        function openStartRepairModal(repairId) {
+            currentRepairId = repairId;
+            document.getElementById('startRepairModal').classList.add('active');
+        }
+
+        function openCompleteRepairModal(repairId) {
+            currentRepairId = repairId;
+            document.getElementById('completeRepairModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+            // Очистка полей
+            document.getElementById('checkedBy').value = '';
+            document.getElementById('isWorking').value = 'true';
+            document.getElementById('issueDescription').value = '';
+            document.getElementById('conditionNotes').value = '';
+            document.getElementById('repairedBy').value = '';
+            document.getElementById('repairNotes').value = '';
+            document.getElementById('issueBlock').style.display = 'none';
+        }
+
+        function toggleIssueField() {
+            const isWorking = document.getElementById('isWorking').value === 'true';
+            document.getElementById('issueBlock').style.display = isWorking ? 'none' : 'block';
+        }
+
+        // API вызовы
+        async function confirmAssign() {
+            const memberId = document.getElementById('memberSelect').value;
+            
+            try {
+                const response = await fetch(`${API_URL}/tools/assign`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        tool_id: currentToolId,
+                        member_id: parseInt(memberId)
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('✅ ' + result.message);
+                    closeModal();
+                    loadTools();
+                } else {
+                    alert('❌ ' + result.detail);
+                }
+            } catch (error) {
+                alert('❌ Ошибка при выдаче инструмента');
+                console.error(error);
+            }
+        }
+
+        async function confirmReturn() {
+            const checkedBy = document.getElementById('checkedBy').value;
+            const isWorking = document.getElementById('isWorking').value === 'true';
+            const issueDescription = document.getElementById('issueDescription').value;
+            const conditionNotes = document.getElementById('conditionNotes').value;
+            
+            if (!checkedBy) {
+                alert('Введите ФИО принимающего');
+                return;
+            }
+            
+            if (!isWorking && !issueDescription) {
+                alert('Опишите неисправность');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/tools/return`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        tool_id: currentToolId,
+                        checked_by: checkedBy,
+                        is_working: isWorking,
+                        condition_notes: conditionNotes,
+                        issue_description: issueDescription
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    if (result.status === 'in_repair') {
+                        alert(`⚠️ ВНИМАНИЕ!\n\n${result.message}\n\nНеисправность: ${result.issue}\nОстаётся у: ${result.held_by}`);
+                    } else {
+                        alert('✅ ' + result.message);
+                    }
+                    closeModal();
+                    loadTools();
+                } else {
+                    alert('❌ ' + result.detail);
+                }
+            } catch (error) {
+                alert('❌ Ошибка при возврате инструмента');
+                console.error(error);
+            }
+        }
+
+        async function confirmStartRepair() {
+            const repairedBy = document.getElementById('repairedBy').value;
+            
+            if (!repairedBy) {
+                alert('Введите ФИО мастера');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/repairs/start`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        repair_id: currentRepairId,
+                        repaired_by: repairedBy
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('✅ ' + result.message);
+                    closeModal();
+                    loadTools();
+                } else {
+                    alert('❌ ' + result.detail);
+                }
+            } catch (error) {
+                alert('❌ Ошибка при начале ремонта');
+                console.error(error);
+            }
+        }
+
+        async function confirmCompleteRepair() {
+            const isFixed = document.getElementById('isFixed').value === 'true';
+            const repairNotes = document.getElementById('repairNotes').value;
+            
+            if (!repairNotes) {
+                alert('Введите примечания о ремонте');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/repairs/complete`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        repair_id: currentRepairId,
+                        is_fixed: isFixed,
+                        repair_notes: repairNotes
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('✅ ' + result.message);
+                    closeModal();
+                    loadTools();
+                } else {
+                    alert('❌ ' + result.detail);
+                }
+            } catch (error) {
+                alert('❌ Ошибка при завершении ремонта');
+                console.error(error);
+            }
+        }
+
+        // Запуск при загрузке страницы
+        init();
+    </script>
+</body>
+</html>
+ 

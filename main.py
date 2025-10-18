@@ -1,0 +1,348 @@
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+import datetime
+from typing import Optional
+from models import SessionLocal, CrewMember, Tool, ToolAssignment, RepairRecord, CurrentAssignment
+
+
+
+app = FastAPI(title="Tool Tracker API", version="2.0")
+
+# CORS для frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Подключение статических файлов
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+def serve_frontend():
+    """Главная страница с веб-интерфейсом"""
+    return FileResponse("static/index.html")
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+class ToolStatusResponse(BaseModel):
+    tool_id: int
+    tool_name: str
+    current_holder: Optional[str] = None
+    assigned_at: Optional[datetime.datetime] = None
+    status: str
+    last_check_status: Optional[bool] = None
+    last_check_date: Optional[datetime.datetime] = None
+    repair_info: Optional[dict] = None
+
+class AssignRequest(BaseModel):
+    tool_id: int
+    member_id: int
+
+class ReturnRequest(BaseModel):
+    tool_id: int
+    checked_by: str
+    is_working: bool
+    condition_notes: Optional[str] = ""
+    issue_description: Optional[str] = ""
+
+class StartRepairRequest(BaseModel):
+    repair_id: int
+    repaired_by: str
+
+class CompleteRepairRequest(BaseModel):
+    repair_id: int
+    repair_notes: str
+    is_fixed: bool
+
+@app.get("/")
+def root():
+    return {"message": "Tool Tracker API v2.0 with PostgreSQL/Supabase", "status": "running"}
+
+@app.get("/health")
+def health_check(db: Session = Depends(get_db)):
+    """Проверка здоровья API и подключения к БД"""
+    try:
+        from sqlalchemy import text
+        db.execute(text("SELECT 1"))
+        return {"status": "healthy", "database": "connected"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+
+@app.get("/tools/status", response_model=list[ToolStatusResponse])
+def get_tools_status(db: Session = Depends(get_db)):
+    """Получить статус всех инструментов"""
+    assignments = db.query(CurrentAssignment).all()
+    result = []
+    
+    for a in assignments:
+        holder = db.query(CrewMember).filter(
+            CrewMember.id == a.member_id
+        ).first() if a.member_id else None
+        
+        repair_info = None
+        if a.status == "in_repair" and a.repair_id:
+            repair = db.query(RepairRecord).filter_by(id=a.repair_id).first()
+            if repair:
+                repair_info = {
+                    "repair_id": repair.id,
+                    "issue": repair.issue_description,
+                    "reported_by": repair.reported_by,
+                    "reported_at": repair.reported_at.isoformat() if repair.reported_at else None,
+                    "repair_status": repair.status,
+                    "held_by": holder.name if holder else None
+                }
+        
+        result.append(ToolStatusResponse(
+            tool_id=a.tool_id,
+            tool_name=a.tool.name,
+            current_holder=holder.name if holder else None,
+            assigned_at=a.assigned_at,
+            status=a.status,
+            last_check_status=a.last_check_status,
+            last_check_date=a.last_check_date,
+            repair_info=repair_info
+        ))
+    
+    return result
+
+@app.get("/members")
+def get_members(db: Session = Depends(get_db)):
+    """Получить список всех членов бригады"""
+    members = db.query(CrewMember).all()
+    return [{"id": m.id, "name": m.name} for m in members]
+
+@app.post("/tools/assign")
+def assign_tool(request: AssignRequest, db: Session = Depends(get_db)):
+    """Выдать инструмент работнику"""
+    assignment = db.query(CurrentAssignment).filter_by(
+        tool_id=request.tool_id
+    ).first()
+    
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Инструмент не найден")
+    
+    if assignment.member_id is not None:
+        raise HTTPException(
+            status_code=400, 
+            detail="Инструмент уже выдан другому работнику"
+        )
+    
+    if assignment.last_check_status is False:
+        raise HTTPException(
+            status_code=400,
+            detail="Инструмент неисправен и не может быть выдан"
+        )
+    
+    assignment.member_id = request.member_id
+    assignment.assigned_at = datetime.datetime.utcnow()
+    assignment.status = "assigned"
+    
+    db.add(ToolAssignment(
+        tool_id=request.tool_id,
+        member_id=request.member_id,
+        action="assign",
+        timestamp=datetime.datetime.utcnow()
+    ))
+    
+    db.commit()
+    return {"success": True, "message": "Инструмент успешно выдан"}
+
+@app.post("/tools/return")
+def return_tool(request: ReturnRequest, db: Session = Depends(get_db)):
+    """Возврат инструмента с проверкой"""
+    assignment = db.query(CurrentAssignment).filter_by(
+        tool_id=request.tool_id
+    ).first()
+    
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Инструмент не найден")
+    
+    if assignment.member_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Инструмент уже находится в инвентаре"
+        )
+    
+    if assignment.status == "in_repair":
+        raise HTTPException(
+            status_code=400,
+            detail="Инструмент находится в ремонте"
+        )
+    
+    returning_member_id = assignment.member_id
+    check_timestamp = datetime.datetime.utcnow()
+    
+    if request.is_working:
+        db.add(ToolAssignment(
+            tool_id=request.tool_id,
+            member_id=returning_member_id,
+            action="return",
+            timestamp=check_timestamp,
+            is_checked=True,
+            checked_by=request.checked_by,
+            condition_notes=request.condition_notes,
+            checked_at=check_timestamp
+        ))
+        
+        assignment.member_id = None
+        assignment.assigned_at = None
+        assignment.status = "available"
+        assignment.last_check_status = True
+        assignment.last_check_date = check_timestamp
+        assignment.repair_id = None
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Инструмент возвращён в инвентарь",
+            "status": "available"
+        }
+    else:
+        if not request.issue_description:
+            raise HTTPException(
+                status_code=400,
+                detail="Необходимо указать описание неисправности"
+            )
+        
+        repair = RepairRecord(
+            tool_id=request.tool_id,
+            member_id=returning_member_id,
+            reported_by=request.checked_by,
+            issue_description=request.issue_description,
+            reported_at=check_timestamp,
+            status="pending"
+        )
+        db.add(repair)
+        db.flush()
+        
+        db.add(ToolAssignment(
+            tool_id=request.tool_id,
+            member_id=returning_member_id,
+            action="repair_reported",
+            timestamp=check_timestamp,
+            is_checked=True,
+            checked_by=request.checked_by,
+            condition_notes=f"НЕИСПРАВЕН: {request.issue_description}",
+            checked_at=check_timestamp
+        ))
+        
+        assignment.status = "in_repair"
+        assignment.last_check_status = False
+        assignment.last_check_date = check_timestamp
+        assignment.repair_id = repair.id
+        
+        db.commit()
+        
+        member = db.query(CrewMember).filter_by(id=returning_member_id).first()
+        
+        return {
+            "success": True,
+            "message": f"Выявлена неисправность. Инструмент переведён в статус 'В РЕМОНТЕ' и остаётся у {member.name}",
+            "status": "in_repair",
+            "repair_id": repair.id,
+            "issue": request.issue_description,
+            "held_by": member.name
+        }
+
+@app.post("/repairs/start")
+def start_repair(request: StartRepairRequest, db: Session = Depends(get_db)):
+    """Начать ремонт"""
+    repair = db.query(RepairRecord).filter_by(id=request.repair_id).first()
+    
+    if not repair:
+        raise HTTPException(status_code=404, detail="Запись о ремонте не найдена")
+    
+    if repair.status != "pending":
+        raise HTTPException(status_code=400, detail="Ремонт уже начат или завершён")
+    
+    repair.status = "in_progress"
+    repair.repair_started_at = datetime.datetime.utcnow()
+    repair.repaired_by = request.repaired_by
+    
+    db.commit()
+    
+    return {"success": True, "message": f"Ремонт начат мастером {request.repaired_by}"}
+
+@app.post("/repairs/complete")
+def complete_repair(request: CompleteRepairRequest, db: Session = Depends(get_db)):
+    """Завершить ремонт"""
+    repair = db.query(RepairRecord).filter_by(id=request.repair_id).first()
+    
+    if not repair:
+        raise HTTPException(status_code=404, detail="Запись о ремонте не найдена")
+    
+    if repair.status == "completed":
+        raise HTTPException(status_code=400, detail="Ремонт уже завершён")
+    
+    completion_time = datetime.datetime.utcnow()
+    
+    repair.status = "completed"
+    repair.repair_completed_at = completion_time
+    repair.repair_notes = request.repair_notes
+    
+    db.add(ToolAssignment(
+        tool_id=repair.tool_id,
+        member_id=repair.member_id,
+        action="repair_completed",
+        timestamp=completion_time,
+        is_checked=True,
+        checked_by=repair.repaired_by,
+        condition_notes=f"Ремонт завершён. {request.repair_notes}",
+        checked_at=completion_time
+    ))
+    
+    assignment = db.query(CurrentAssignment).filter_by(tool_id=repair.tool_id).first()
+    
+    if request.is_fixed:
+        assignment.status = "available"
+        assignment.member_id = None
+        assignment.assigned_at = None
+        assignment.last_check_status = True
+        assignment.last_check_date = completion_time
+        assignment.repair_id = None
+        message = "Ремонт завершён. Инструмент возвращён в инвентарь и готов к выдаче"
+    else:
+        message = "Ремонт завершён, но инструмент не исправен"
+    
+    db.commit()
+    
+    return {"success": True, "message": message, "is_fixed": request.is_fixed, "status": assignment.status}
+
+@app.get("/repairs/active")
+def get_active_repairs(db: Session = Depends(get_db)):
+    """Получить список активных ремонтов"""
+    repairs = db.query(RepairRecord).filter(
+        RepairRecord.status.in_(["pending", "in_progress"])
+    ).all()
+    
+    result = []
+    for r in repairs:
+        member = db.query(CrewMember).filter_by(id=r.member_id).first()
+        result.append({
+            "repair_id": r.id,
+            "tool": r.tool.name,
+            "issue": r.issue_description,
+            "reported_by": r.reported_by,
+            "reported_at": r.reported_at.isoformat() if r.reported_at else None,
+            "held_by": member.name if member else None,
+            "status": r.status,
+            "repaired_by": r.repaired_by,
+            "started_at": r.repair_started_at.isoformat() if r.repair_started_at else None
+        })
+    
+    return result

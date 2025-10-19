@@ -11,6 +11,10 @@ load_dotenv()
 # Настройки
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
+# Убираем слеш в конце если есть
+if API_URL.endswith('/'):
+    API_URL = API_URL[:-1]
+
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -59,7 +63,7 @@ async def api_request(endpoint, method='GET', data=None):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Стартовое сообщение"""
+    """Стартовое сообщение при команде /start"""
     keyboard = [
         [InlineKeyboardButton(f"{EMOJI['list']} Статус инструментов", callback_data='status')],
         [InlineKeyboardButton(f"{EMOJI['tool']} Выдать инструмент", callback_data='assign')],
@@ -75,6 +79,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     
     await update.message.reply_text(welcome_text, parse_mode='Markdown', reply_markup=reply_markup)
+
+
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать главное меню (для кнопки)"""
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [
+        [InlineKeyboardButton(f"{EMOJI['list']} Статус инструментов", callback_data='status')],
+        [InlineKeyboardButton(f"{EMOJI['tool']} Выдать инструмент", callback_data='assign')],
+        [InlineKeyboardButton(f"{EMOJI['success']} Вернуть инструмент", callback_data='return')],
+        [InlineKeyboardButton(f"{EMOJI['user']} Список работников", callback_data='members')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    welcome_text = f"""
+{EMOJI['tool']} *WheraTools - Учёт инструментов*
+
+Выберите действие из меню ниже:
+"""
+    
+    await query.edit_message_text(welcome_text, parse_mode='Markdown', reply_markup=reply_markup)
+
 
 async def show_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показать статус всех инструментов"""
@@ -279,8 +306,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     
     if data == 'menu':
-        await start(update, context)
-        await query.message.delete()
+    	await show_menu(update, context)
     elif data == 'status':
         await show_status(update, context)
     elif data == 'assign':

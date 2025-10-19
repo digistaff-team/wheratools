@@ -82,40 +82,62 @@ def health_check(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 
-@app.get("/tools/status", response_model=list[ToolStatusResponse])
-def get_tools_status(db: Session = Depends(get_db)):
+@app.get("/tools/status")
+async def get_tools_status():
     """Получить статус всех инструментов"""
-    assignments = db.query(CurrentAssignment).all()
-    result = []
-    
-    for a in assignments:
-        holder = db.query(CrewMember).filter(
-            CrewMember.id == a.member_id
-        ).first() if a.member_id else None
+    db = SessionLocal()
+    try:
+        # Получаем все инструменты
+        tools = db.query(Tool).all()
         
-        repair_info = None
-        if a.status == "in_repair" and a.repair_id:
-            repair = db.query(RepairRecord).filter_by(id=a.repair_id).first()
-            if repair:
+        result = []
+        for tool in tools:
+            # Проверяем есть ли активная выдача
+            current_assignment = db.query(CurrentAssignment).filter(
+                CurrentAssignment.tool_id == tool.id
+            ).first()
+            
+            # Проверяем есть ли активный ремонт
+            active_repair = db.query(RepairRecord).filter(
+                RepairRecord.tool_id == tool.id,
+                RepairRecord.status.in_(['reported', 'in_progress'])
+            ).first()
+            
+            # Определяем статус
+            if active_repair:
+                status = "in_repair"
+                current_holder = None
                 repair_info = {
-                    "repair_id": repair.id,
-                    "issue": repair.issue_description,
-                    "reported_by": repair.reported_by,
-                    "reported_at": repair.reported_at.isoformat() if repair.reported_at else None,
-                    "repair_status": repair.status,
-                    "held_by": holder.name if holder else None
+                    "issue": active_repair.issue,
+                    "reported_at": str(active_repair.reported_at) if active_repair.reported_at else None
                 }
+            elif current_assignment:
+                status = "assigned"
+                member = db.query(CrewMember).filter(
+                    CrewMember.id == current_assignment.member_id
+                ).first()
+                current_holder = member.name if member else None
+                repair_info = None
+            else:
+                status = "available"
+                current_holder = None
+                repair_info = None
+            
+            result.append({
+                "tool_id": tool.id,
+                "tool_name": tool.name,
+                "status": status,
+                "current_holder": current_holder,
+                "repair_info": repair_info
+            })
         
-        result.append(ToolStatusResponse(
-            tool_id=a.tool_id,
-            tool_name=a.tool.name,
-            current_holder=holder.name if holder else None,
-            assigned_at=a.assigned_at,
-            status=a.status,
-            last_check_status=a.last_check_status,
-            last_check_date=a.last_check_date,
-            repair_info=repair_info
-        ))
+        return result
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        db.close()
+
     
     return result
 

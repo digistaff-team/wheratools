@@ -345,4 +345,54 @@ def get_active_repairs(db: Session = Depends(get_db)):
             "started_at": r.repair_started_at.isoformat() if r.repair_started_at else None
         })
     
+@app.post("/init-database")
+async def init_database():
+    """Создание всех таблиц в базе данных"""
+    try:
+        from models import Base, engine
+        Base.metadata.create_all(bind=engine)
+        
+        db = SessionLocal()
+        try:
+            # Проверяем есть ли уже данные
+            existing_members = db.query(CrewMember).count()
+            existing_tools = db.query(Tool).count()
+            
+            if existing_members == 0:
+                members = [
+                    CrewMember(name="Василий Петров"),
+                    CrewMember(name="Иван Сидоров"), 
+                    CrewMember(name="Пётр Иванов")
+                ]
+                for member in members:
+                    db.add(member)
+            
+            if existing_tools == 0:
+                tools = [
+                    Tool(name="электролобзик"),
+                    Tool(name="бетономешалка"),
+                    Tool(name="перфоратор")
+                ]
+                for tool in tools:
+                    db.add(tool)
+            
+            db.commit()
+            
+            return {
+                "message": "База данных успешно инициализирована",
+                "tables_created": True,
+                "members_added": existing_members == 0,
+                "tools_added": existing_tools == 0
+            }
+            
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+        finally:
+            db.close()
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при создании таблиц: {str(e)}")
+
+
     return result

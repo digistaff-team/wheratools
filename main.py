@@ -443,4 +443,42 @@ async def force_add_data():
     finally:
         db.close()
 
+@app.get("/debug-tools")
+async def debug_tools():
+    """Отладочный endpoint для проверки данных"""
+    db = SessionLocal()
+    try:
+        # Проверяем просто все инструменты
+        tools = db.query(Tool).all()
+        members = db.query(CrewMember).all()
+        assignments = db.query(CurrentAssignment).all()
+        
+        tools_data = []
+        for tool in tools:
+            tools_data.append({
+                "id": tool.id,
+                "name": tool.name,
+                "created_at": str(tool.created_at) if tool.created_at else None
+            })
+        
+        members_data = []
+        for member in members:
+            members_data.append({
+                "id": member.id,
+                "name": member.name
+            })
+        
+        return {
+            "tools_count": len(tools),
+            "members_count": len(members),
+            "assignments_count": len(assignments),
+            "tools": tools_data,
+            "members": members_data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+    finally:
+        db.close()
+
+
     return result

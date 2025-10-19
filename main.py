@@ -394,5 +394,53 @@ async def init_database():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка при создании таблиц: {str(e)}")
 
+@app.post("/force-add-data")
+async def force_add_data():
+    """Принудительное добавление тестовых данных (очистка и пересоздание)"""
+    db = SessionLocal()
+    try:
+        # Очищаем все таблицы в правильном порядке (из-за foreign keys)
+        db.query(CurrentAssignment).delete()
+        db.query(ToolAssignment).delete()
+        db.query(RepairRecord).delete()
+        db.query(Tool).delete()
+        db.query(CrewMember).delete()
+        db.commit()
+        
+        # Добавляем работников
+        members_data = ["Василий Петров", "Иван Сидоров", "Пётр Иванов"]
+        members = []
+        for name in members_data:
+            member = CrewMember(name=name)
+            db.add(member)
+            members.append(member)
+        db.commit()
+        
+        # Добавляем инструменты
+        tools_data = ["электролобзик", "бетономешалка", "перфоратор"]
+        tools = []
+        for name in tools_data:
+            tool = Tool(name=name)
+            db.add(tool)
+            tools.append(tool)
+        db.commit()
+        
+        # Проверяем что данные действительно добавились
+        members_count = db.query(CrewMember).count()
+        tools_count = db.query(Tool).count()
+        
+        return {
+            "message": "Данные успешно добавлены",
+            "members_added": members_count,
+            "tools_added": tools_count,
+            "members_list": [m.name for m in members],
+            "tools_list": [t.name for t in tools]
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Ошибка: {str(e)}")
+    finally:
+        db.close()
 
     return result

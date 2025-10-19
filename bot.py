@@ -35,13 +35,28 @@ async def api_request(endpoint, method='GET', data=None):
         async with aiohttp.ClientSession() as session:
             if method == 'GET':
                 async with session.get(url) as response:
-                    return await response.json()
+                    if response.status == 200:
+                        result = await response.json()
+                        # Проверяем что получили список или словарь, а не строку
+                        if isinstance(result, (list, dict)):
+                            return result
+                        else:
+                            logger.error(f"Unexpected response type: {type(result)}")
+                            return None
+                    else:
+                        logger.error(f"API error: {response.status}")
+                        return None
             elif method == 'POST':
                 async with session.post(url, json=data) as response:
-                    return await response.json()
+                    if response.status == 200:
+                        return await response.json()
+                    else:
+                        logger.error(f"API error: {response.status}")
+                        return None
     except Exception as e:
         logger.error(f"API request error: {e}")
         return None
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Стартовое сообщение"""
@@ -68,14 +83,17 @@ async def show_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     tools = await api_request('/tools/status')
     
-    if not tools:
-        await query.edit_message_text(f"{EMOJI['error']} Ошибка получения данных")
+    if not tools or not isinstance(tools, list):
+        await query.edit_message_text(
+            f"{EMOJI['error']} Ошибка получения данных с сервера",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data='menu')]])
+        )
         return
     
     # Подсчёт статистики
-    available = sum(1 for t in tools if t['status'] == 'available')
-    assigned = sum(1 for t in tools if t['status'] == 'assigned')
-    repair = sum(1 for t in tools if t['status'] == 'in_repair')
+    available = sum(1 for t in tools if isinstance(t, dict) and t.get('status') == 'available')
+    assigned = sum(1 for t in tools if isinstance(t, dict) and t.get('status') == 'assigned')
+    repair = sum(1 for t in tools if isinstance(t, dict) and t.get('status') == 'in_repair')
     
     text = f"📊 *Статистика инструментов*\n\n"
     text += f"{EMOJI['available']} Доступно: *{available}*\n"
@@ -84,18 +102,23 @@ async def show_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += "━━━━━━━━━━━━━━━━━\n\n"
     
     for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+            
         status_emoji = {
             'available': EMOJI['available'],
             'assigned': EMOJI['assigned'],
             'in_repair': EMOJI['repair']
-        }.get(tool['status'], '❓')
+        }.get(tool.get('status'), '❓')
         
-        text += f"{status_emoji} *{tool['tool_name']}*\n"
+        text += f"{status_emoji} *{tool.get('tool_name', 'Неизвестно')}*\n"
         
-        if tool['status'] == 'assigned':
+        if tool.get('status') == 'assigned' and tool.get('current_holder'):
             text += f"   У: _{tool['current_holder']}_\n"
-        elif tool['status'] == 'in_repair' and tool['repair_info']:
-            text += f"   Проблема: _{tool['repair_info']['issue']}_\n"
+        elif tool.get('status') == 'in_repair' and tool.get('repair_info'):
+            info = tool['repair_info']
+            if isinstance(info, dict) and 'issue' in info:
+                text += f"   Проблема: _{info['issue']}_\n"
         
         text += "\n"
     
@@ -103,6 +126,7 @@ async def show_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
+
 
 async def assign_tool_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Выбор инструмента для выдачи"""
@@ -234,9 +258,17 @@ async def show_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     members = await api_request('/members')
     
+    if not members or not isinstance(members, list):
+        await query.edit_message_text(
+            f"{EMOJI['error']} Ошибка получения списка работников",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data='menu')]])
+        )
+        return
+    
     text = f"{EMOJI['user']} *Список работников:*\n\n"
     for member in members:
-        text += f"• {member['name']}\n"
+        if isinstance(member, dict) and 'name' in member:
+            text += f"• {member['name']}\n"
     
     keyboard = [[InlineKeyboardButton("🔙 Главное меню", callback_data='menu')]]
     await query.edit_message_text(text, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
